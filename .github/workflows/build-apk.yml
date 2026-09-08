@@ -1,0 +1,135 @@
+# =============================================================================
+# Racing Prototype - Android APK build, fully automated on GitHub's cloud.
+#
+# This workflow needs no local computer and no paid service. It runs entirely
+# on GitHub-hosted runners. Trigger it manually from the Actions tab (works
+# fine from the GitHub mobile app / mobile browser), or it runs automatically
+# on every push to main.
+#
+# What it does, in order:
+#   1. Checks out the repository.
+#   2. Runs a Unity batch-mode step that calls CiSceneSetup.GenerateAndSaveScene,
+#      which builds the race scene the same way the "Racing Prototype > Build
+#      Race Scene" editor menu does (see Assets/Editor/UnityBuilderAction/
+#      CiSceneSetup.cs), saves it to Assets/_Project/Scenes/RaceScene.unity,
+#      and registers it in the project's build settings.
+#   3. Builds an Android .apk from that scene using game-ci/unity-builder
+#      (the standard, free, open-source action for this - https://game.ci).
+#   4. Uploads the .apk as a workflow artifact you can download from your phone.
+#
+# REQUIRED GITHUB SECRETS (Settings > Secrets and variables > Actions > New
+# repository secret) - see the setup report for exactly how to obtain these:
+#   UNITY_LICENSE   - contents of your Unity Personal .ulf license file
+#   UNITY_EMAIL     - the email address of your (free) Unity ID account
+#   UNITY_PASSWORD  - the password of that Unity ID account
+#
+# No Android signing keystore is required: this produces a debug-signed APK,
+# which is exactly what you need to sideload/install directly on your own
+# Android phone. It is NOT suitable for uploading to the Google Play Store
+# as-is (that would need a release keystore, which is a separate, later step
+# only needed if you ever want to publish there).
+# =============================================================================
+
+name: Build Android APK
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+
+jobs:
+  build-android-apk:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # game-ci/unity-builder@v4 is a mature, extremely well-documented, widely used
+      # action, but as of this writing it still runs on Node.js 20 internally (a
+      # known, tracked issue: github.com/game-ci/unity-builder/issues/826). GitHub
+      # is phasing Node 20 out of Actions runners on a rolling schedule and has
+      # pushed the final removal date back more than once already (most recently to
+      # September 23, 2026 - see github.blog/changelog, "Deprecation of Node 20 on
+      # GitHub Actions runners"). A v5 of unity-builder exists in preparation, but
+      # at the time this workflow was written it was not yet a finished, stable
+      # release, so pinning to it now risks a different kind of breakage.
+      # ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION is GitHub's own official, documented
+      # opt-back-in flag for exactly this situation. If a build ever fails with a
+      # Node.js version error despite this flag, that means GitHub has finally
+      # removed the escape hatch itself - at that point, check
+      # https://github.com/game-ci/unity-builder/releases for a stable v5 (or
+      # later) release and change @v4 to that tag in both "uses:" lines below.
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Cache Unity Library folder
+        uses: actions/cache@v5
+        with:
+          path: Library
+          key: Library-Android-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: |
+            Library-Android-
+
+      # -------------------------------------------------------------------
+      # Step 1: Generate and save the race scene headlessly.
+      # The project ships with no .unity scene file on purpose - the scene
+      # is normally built by clicking an editor menu (RaceSceneBuilder). In
+      # CI there is nobody to click anything, so CiSceneSetup.cs calls the
+      # same non-interactive build method and saves the result to disk.
+      # -------------------------------------------------------------------
+      - name: Generate race scene (headless)
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          unityVersion: auto
+          targetPlatform: Android
+          buildMethod: CI.CiSceneSetup.GenerateAndSaveScene
+          buildsPath: build-scene-step
+          versioning: None
+          allowDirtyBuild: true
+
+      - name: Commit-free verification that the scene now exists
+        run: |
+          if [ ! -f "Assets/_Project/Scenes/RaceScene.unity" ]; then
+            echo "::error::RaceScene.unity was not created by the scene generation step. Stopping before the Android build."
+            exit 1
+          fi
+          echo "Race scene found, continuing to the Android build."
+
+      # -------------------------------------------------------------------
+      # Step 2: Build the real Android .apk from the generated scene.
+      # No buildMethod is given here, so unity-builder uses its own default
+      # build script, which builds every scene listed in Build Settings
+      # (i.e. exactly the one scene CiSceneSetup just registered) as an
+      # Android package (.apk). No keystore inputs are set, so Unity signs
+      # the APK with its default debug key - fine for installing on your
+      # own phone, not for a Play Store release.
+      # -------------------------------------------------------------------
+      - name: Build Android APK
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          unityVersion: auto
+          targetPlatform: Android
+          androidExportType: androidPackage
+          buildsPath: build
+          versioning: None
+          allowDirtyBuild: true
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: RacingPrototype-Android-APK
+          path: build/Android/*.apk
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,52 @@
+# This file was missing from the original project. Without it, the very
+# large, fully regeneratable folders Unity creates on first open (Library/,
+# Temp/, obj/, Logs/) would get committed to git by accident, bloating the
+# repository and slowing down every checkout/clone - including the one
+# GitHub Actions does on every single workflow run.
+
+# Unity-generated folders (safe to delete/regenerate at any time)
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]serSettings/
+[Mm]emoryCaptures/
+
+# Unity crash / analytics
+sysinfo.txt
+crashlytics-build.properties
+
+# Visual Studio / Rider / VS Code generated project files
+.vs/
+.vscode/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+.idea/
+*.iml
+
+# OS-generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# CI-only build output produced by the "Generate race scene" workflow step
+# (see .github/workflows/build-apk.yml) - not meant to be committed.
+build-scene-step/
